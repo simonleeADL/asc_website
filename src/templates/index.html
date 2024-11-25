@@ -79,7 +79,8 @@
             <input type="checkbox" id="limit_clear_images" name="limit_clear_images"> Limit to clear images (very rough)
         </label><br><br>
         
-        <!-- Above the download button -->
+        <input type="hidden" id="only_calculate" name="only_calculate" value=false>
+        
         <button type="button" id="calculate_size">Calculate Download Size</button><br><br>
         <button type="submit" id="download_images">Download Images</button>
     </form>
@@ -228,7 +229,7 @@
             const siderealDateTime = document.getElementById('sidereal_datetime').value;
             const limitClearImages = document.getElementById('limit_clear_images').checked;
 
-            fetch('/calculate_size', {
+            fetch('/download', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -237,7 +238,8 @@
                     'start_date': startDate,
                     'end_date': endDate,
                     'sidereal_datetime': siderealDateTime,
-                    'limit_clear_images': limitClearImages ? 'on' : 'off'
+                    'limit_clear_images': limitClearImages ? 'on' : 'off',
+                    'only_calculate': true
                 })
             })
             .then(response => response.json())
