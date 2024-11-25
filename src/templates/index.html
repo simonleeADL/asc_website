@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Downloader</title>
+    <style>
+        /* Simple Calendar Style */
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            max-width: 800px;
+        }
+        th, td {
+            border: 1px solid black;
+            padding: 10px;
+            text-align: center;
+            width: calc(100% / 7); /* Ensure all cells are the same width */
+	    height: 50px;
+        }
+        .has-images {
+            background-color: #006400; /* Dark green */
+            color: white;
+            font-weight: bold;
+            cursor: pointer; /* Make clickable */
+        }
+        .no-images {
+            background-color: #f8d7da; /* Light red */
+        }
+        #calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: left;
+            margin-bottom: 10px;
+            max-width: 800px;
+            margin: 0 0; /* Center it */
+        }
+        button {
+            padding: 5px 5px;
+            cursor: pointer;
+        }
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        p, body {
+          font-family: "Roboto", sans-serif;
+          font-weight: 400;
+          font-style: normal;
+        }
+        h1,h2,h3,h4,h5,h6 {
+          font-family: "Roboto", sans-serif;
+          font-weight: 700;
+          font-style: normal;
+        }
+    </style>
+</head>
+<body>
+    <h1>All Sky Camera Image Downloader | University of Adelaide</h1>
+    
+    <p>The All Sky Camera and this website are maintained by Simon Lee (simon.lee@adelaide.edu.au) as part of the High Energy Astrophysics Group.</p>
+    <hr>
+    <!-- Image Downloader Form -->
+    <form id="download-form" method="post" action="/download">
+        <h2>Download by sidereal time</h2>
+        <label for="start_date">Date range start (Adelaide time):</label>
+        <input type="date" id="start_date" name="start_date" required><br><br>
+
+        <label for="end_date">Date range end (Adelaide time):</label>
+        <input type="date" id="end_date" name="end_date" required><br><br>
+        
+        <label for="sidereal_datetime">Reference time (Adelaide time):</label>
+        <input type="datetime-local" id="sidereal_datetime" name="sidereal_datetime" required><br><br>
+        <!-- Checkbox for limiting to clear images -->
+        <label>
+            <input type="checkbox" id="limit_clear_images" name="limit_clear_images"> Limit to clear images (very rough)
+        </label><br><br>
+        
+        <!-- Above the download button -->
+        <button type="button" id="calculate_size">Calculate Download Size</button><br><br>
+        <button type="submit" id="download_images">Download Images</button>
+    </form>
+    <hr>
+    <!-- Calendar displaying image counts per day -->
+    <h2>Download by date</h2>
+    <div id="calendar-header">
+        <button id="prev-month" disabled>Previous Month</button>
+        <span id="current-month"></span>
+        <button id="next-month" disabled>Next Month</button>
+    </div>
+    <div id="calendar-container"></div>
+
+    <script>
+        let currentMonth = new Date().getMonth();  // Get the current month (0-indexed)
+        let currentYear = new Date().getFullYear(); // Get the current year
+        let hasPreviousImages = false;
+        let hasNextImages = false;
+
+        // Fetch and display the calendar
+        function fetchAndRenderCalendar() {
+            fetch(`/get_image_counts`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const imageCounts = processImageCounts(data);
+                    renderCalendar(imageCounts);
+                    updateNavigationButtons(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching image counts:', error);
+                    document.getElementById('calendar-container').innerText = 'Error loading calendar.';
+                });
+        }
+
+        function processImageCounts(data) {
+            const imageCounts = {};
+            data.forEach(entry => {
+                imageCounts[entry.image_date] = entry.image_count;
+            });
+            return imageCounts;
+        }
+
+        // Function to render the calendar
+        function renderCalendar(imageCounts) {
+            const calendarContainer = document.getElementById('calendar-container');
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            
+            // Update current month display
+            document.getElementById('current-month').innerText = `${monthNames[currentMonth]} ${currentYear}`;
+
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate(); // Get number of days in the current month
+            let table = '<table>';
+            table += '<tr><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr>';
+
+            let day = 1;
+            let firstDayOfWeek = (new Date(currentYear, currentMonth, 1).getDay() + 6) % 7; // Get the weekday of the first day (adjusting for Monday start)
+            table += '<tr>';
+
+            // Empty cells before the first day of the month
+            for (let i = 0; i < firstDayOfWeek; i++) {
+                table += '<td></td>';
+            }
+
+            // Fill the calendar with day numbers and image counts
+            while (day <= daysInMonth) {
+                if (firstDayOfWeek > 6) {
+                    table += '</tr><tr>';
+                    firstDayOfWeek = 0;
+                }
+
+                const dateStr = `${currentYear}${(currentMonth + 1).toString().padStart(2, '0')}${day.toString().padStart(2, '0')}`;
+                const imageCount = imageCounts[dateStr] || 0;
+                const cellClass = imageCount > 0 ? 'has-images' : 'no-images';
+                
+                if (imageCount > 0) {
+                    table += `<td class="${cellClass}" onclick="downloadImages('${dateStr}')">${day}<br><small>${imageCount} images</small></td>`;
+                } else {
+                    table += `<td class="${cellClass}">${day}</td>`;
+                }
+
+                day++;
+                firstDayOfWeek++;
+            }
+
+            // Empty cells after the last day of the month
+            while (firstDayOfWeek <= 6) {
+                table += '<td></td>';
+                firstDayOfWeek++;
+            }
+
+            table += '</tr></table>';
+            calendarContainer.innerHTML = table;
+        }
+
+        function downloadImages(date) {
+            window.location.href = `/download_by_date?date=${date}`;
+        }
+
+        function updateNavigationButtons(imageData) {
+            const availableDates = imageData.map(entry => entry.image_date);
+            const minDate = availableDates.length ? availableDates[0] : null;
+            const maxDate = availableDates.length ? availableDates[availableDates.length - 1] : null;
+            
+            hasPreviousImages = minDate && parseInt(minDate.substring(0, 6)) < (currentYear * 100 + currentMonth + 1);
+            hasNextImages = maxDate && parseInt(maxDate.substring(0, 6)) > (currentYear * 100 + currentMonth + 1);
+
+            document.getElementById('prev-month').disabled = !hasPreviousImages;
+            document.getElementById('next-month').disabled = !hasNextImages;
+        }
+
+        // Add event listeners for month navigation
+        document.getElementById('prev-month').addEventListener('click', () => {
+            if (hasPreviousImages) {
+                currentMonth--;
+                if (currentMonth < 0) {
+                    currentMonth = 11;
+                    currentYear--;
+                }
+                fetchAndRenderCalendar();
+            }
+        });
+
+        document.getElementById('next-month').addEventListener('click', () => {
+            if (hasNextImages) {
+                currentMonth++;
+                if (currentMonth > 11) {
+                    currentMonth = 0;
+                    currentYear++;
+                }
+                fetchAndRenderCalendar();
+            }
+        });
+
+        // Initial render
+        fetchAndRenderCalendar();
+    </script>
+    <script>
+        document.getElementById('calculate_size').onclick = function() {
+            const startDate = document.getElementById('start_date').value;
+            const endDate = document.getElementById('end_date').value;
+            const siderealDateTime = document.getElementById('sidereal_datetime').value;
+            const limitClearImages = document.getElementById('limit_clear_images').checked;
+
+            fetch('/calculate_size', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({
+                    'start_date': startDate,
+                    'end_date': endDate,
+                    'sidereal_datetime': siderealDateTime,
+                    'limit_clear_images': limitClearImages ? 'on' : 'off'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(`Total download size: ${data.total_size_mb.toFixed(2)} MB`);
+            })
+            .catch(error => console.error('Error:', error));
+        };
+    </script>
+    <script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const startDateInput = document.getElementById("start_date");
+        const endDateInput = document.getElementById("end_date");
+        const siderealTimeInput = document.getElementById("sidereal_datetime");
+        const calculateSizeButton = document.getElementById("calculate_size");
+        const downloadButton = document.getElementById("download_images");
+
+        // Function to enable or disable buttons
+        function toggleButtons() {
+            const startDateFilled = startDateInput.value.trim() !== "";
+            const endDateFilled = endDateInput.value.trim() !== "";
+            const siderealTimeFilled = siderealTimeInput.value.trim() !== "";
+            
+            const formFilled = startDateFilled && endDateFilled && siderealTimeFilled;
+
+            calculateSizeButton.disabled = !formFilled;
+            downloadButton.disabled = !formFilled;
+        }
+
+        // Event listeners for input changes
+        startDateInput.addEventListener("input", toggleButtons);
+        endDateInput.addEventListener("input", toggleButtons);
+        siderealTimeInput.addEventListener("input", toggleButtons);
+
+        // Initial call to set button states
+        toggleButtons();
+    });
+    </script>
+</body>
+</html>
+
