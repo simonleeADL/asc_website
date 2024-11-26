@@ -170,17 +170,17 @@ def select_images(start_date,
         # the end time is larger or small than
         # the start time (sidereal time is mod 24)
         if sidereal_start < sidereal_end:
-            valid_images = night_group[
-                            (night_group['sidereal_time']>=sidereal_start) &
-                            (night_group['sidereal_time']<=sidereal_end)
+            valid_images = df_filtered[
+                            (df_filtered['sidereal_time']>=sidereal_start) &
+                            (df_filtered['sidereal_time']<=sidereal_end)
                             ]
         else:
-            valid_images = night_group[
-                            (night_group['sidereal_time']>=sidereal_start) |
-                            (night_group['sidereal_time']<=sidereal_end)
+            valid_images = df_filtered[
+                            (df_filtered['sidereal_time']>=sidereal_start) |
+                            (df_filtered['sidereal_time']<=sidereal_end)
                             ]
         # Update the total size and the selected image list.
-        selected_images += valid_images['Directory']
+        selected_images += list(valid_images['Directory'])
         total_size_mb += sum(valid_images['Filesize (bytes)']) / (1000 * 1000)
     return selected_images, total_size_mb
 
@@ -231,26 +231,36 @@ def download_images():
     """
     start_date = request.form['start_date']
     end_date = request.form['end_date']
-    sidereal_datetime = request.form['sidereal_datetime']
+    reference_datetime = request.form['sidereal_datetime']
+    reference_datetime_end = request.form['sidereal_datetime_end']
     limit_clear_images = request.form.get('limit_clear_images') == 'on'  # Checkbox value
     only_calculate = False
     if request.form['only_calculate'] == "true":
         only_calculate = True
 
-    # Convert Adelaide time to UTC
-    adelaide_time = adelaide_tz.localize(
+    # Get sidereal time from reference time
+    reference_datetime_utc = adelaide_tz.localize(
                     datetime.strptime(
-                    sidereal_datetime, "%Y-%m-%dT%H:%M")
+                    reference_datetime, "%Y-%m-%dT%H:%M")
                     )
-
-    # Get the sidereal time for this specific UTC time
-    sidereal_target = get_sidereal_time(
-                        adelaide_time.astimezone(pytz.utc))
+    sidereal_start = get_sidereal_time(
+                        reference_datetime_utc.astimezone(pytz.utc))
+    
+    if reference_datetime_end:
+        reference_datetime_end_utc = adelaide_tz.localize(
+                        datetime.strptime(
+                        reference_datetime_end, "%Y-%m-%dT%H:%M")
+                        )
+        sidereal_end = get_sidereal_time(
+                            reference_datetime_end_utc.astimezone(pytz.utc))
+    else:
+        sidereal_end = None
 
     selected_images, total_size_mb = select_images(
                                     start_date,
                                     end_date,
-                                    sidereal_target,
+                                    sidereal_start,
+                                    sidereal_end = sidereal_end,
                                     limit_clear_images=limit_clear_images)
 
     if only_calculate:

@@ -72,8 +72,16 @@
         <label for="end_date">Date range end (Adelaide time):</label>
         <input type="date" id="end_date" name="end_date" required><br><br>
         
+        <p>Either:</p>
+        <p>- Select a refernce time. The sidereal time will be calculated. For each night in the date range, the closest image to that sidereal time will be downloaded.</p>
+        <p>- Select a refernce time and a reference time end. The sidereal time range will be calculated. For each night, every image in that sidereal time range will be downloaded. </p>
+        <p></p>
+        
         <label for="sidereal_datetime">Reference time (Adelaide time):</label>
         <input type="datetime-local" id="sidereal_datetime" name="sidereal_datetime" required><br><br>
+        
+        <label for="sidereal_datetime_end">Reference time end (Adelaide time):</label>
+        <input type="datetime-local" id="sidereal_datetime_end" name="sidereal_datetime_end"><br><br>
         <!-- Checkbox for limiting to clear images -->
         <label>
             <input type="checkbox" id="limit_clear_images" name="limit_clear_images"> Limit to clear images (very rough)
@@ -227,6 +235,7 @@
             const startDate = document.getElementById('start_date').value;
             const endDate = document.getElementById('end_date').value;
             const siderealDateTime = document.getElementById('sidereal_datetime').value;
+            const siderealDateTimeEnd = document.getElementById('sidereal_datetime_end').value;
             const limitClearImages = document.getElementById('limit_clear_images').checked;
 
             fetch('/download', {
@@ -238,6 +247,7 @@
                     'start_date': startDate,
                     'end_date': endDate,
                     'sidereal_datetime': siderealDateTime,
+                    'sidereal_datetime_end': siderealDateTimeEnd,
                     'limit_clear_images': limitClearImages ? 'on' : 'off',
                     'only_calculate': true
                 })
