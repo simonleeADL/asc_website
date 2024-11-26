@@ -1,8 +1,12 @@
+"""Useful tools for the All Sky Camera image downloader
+
+julian_date, siderial_time:
+
+Copied from https://www.nies.ch/doc/astro/sternzeit.en.php
+Licensed under CC BY
+"""
+
 def julian_date(year, month, day, utc=0):
-    
-    ## Copied from https://www.nies.ch/doc/astro/sternzeit.en.php
-    ## Licensed under CC BY
-    
     """
     Returns the Julian date, number of days since 1 January 4713 BC 12:00.
     utc is UTC in decimal hours. If utc=0, returns the date at 12:00 UTC.
@@ -28,17 +32,17 @@ def julian_date(year, month, day, utc=0):
         a = int(y/100)
         b = 2 - a + int(a/4)
     jd = int(365.25*(y+4716)) + int(30.6001*(m+1)) + d + h + b - 1524.5
-    return(jd)
+    return jd
 
 
 def siderial_time(year, month, day, utc=0, long=0):
 
     ## Copied from https://www.nies.ch/doc/astro/sternzeit.en.php
     ## Licensed under CC BY
-    
+
     """
-    Returns the siderial time in decimal hours. Longitude (long) is in 
-    decimal degrees. If long=0, return value is Greenwich Mean Siderial Time 
+    Returns the siderial time in decimal hours. Longitude (long) is in
+    decimal degrees. If long=0, return value is Greenwich Mean Siderial Time
     (GMST).
     """
     jd = julian_date(year, month, day)
@@ -51,9 +55,11 @@ def siderial_time(year, month, day, utc=0, long=0):
     # Local siderial time at given UTC (longitude in degrees)
     st = st + long/15
     st = st % 24
-    return(st)
+    return st
 
 def get_sidereal_time(utc_time):
+    """Provides sidereal time (hours) for a given UTC time (datetime)
+    """
     year = utc_time.year
     month = utc_time.month
     day = utc_time.day
