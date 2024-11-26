@@ -21,21 +21,16 @@ pd.options.mode.copy_on_write = True
 app = Flask(__name__)
 
 # Load the CSV database
-
 CONFIG_NAME = 'config_local.json'
-
 CONFIG_DIR = "../config/" + CONFIG_NAME
 CONFIG_PATH = (Path(__file__).parent / CONFIG_DIR).resolve()
-
 with open(CONFIG_PATH, 'r', encoding="utf-8") as f:
     config = json.load(f)
-
-# Access the parameters
 db_location = config['db_location']
 base_dir = config['base_dir']
-
 df = pd.read_csv(db_location, parse_dates=['Timestamp middle','Timestamp middle UTC'])
 
+# Add column of the date of the night of capture
 df['night_date'] = df['Directory'].str[:8]
 image_counts = df.groupby(df['night_date']).size().reset_index(name='image_count_per_night')
 df['night_date'] = pd.to_datetime(df['night_date'])
@@ -117,26 +112,37 @@ def select_images(start_date,
     total_size_mb : float
         Total size of all the chosen images.
     """
+    # Filter to just the images in the date range
     df_filtered = df[(df['night_date'] >= start_date) & (df['night_date'] <= end_date)]
 
+    # Going to list files and count filesize
     selected_images = []
     total_size_mb = 0.0
 
-    # Group images by night
-    for _, night_group in df_filtered.groupby('night_date'):
-        if limit_clear_images:
-            night_group = night_group[
-            night_group['Filesize (bytes)'].between(10500000, 11000000)
-            ]
-        if len(night_group) == 0:
-            continue
+    # Remove images outside of expected file size (likely to not be clear skies)
+    if limit_clear_images:
+        df_filtered = df_filtered[
+        df_filtered['Filesize (bytes)'].between(10500000, 11000000)
+        ]
 
-        night_group['sidereal_time'] = night_group['Timestamp middle UTC'].apply(get_sidereal_time)
+    # Calculate sidereal time for all relevant images.
+    # (done here and not earlier to save on processing time)
+    df_filtered['sidereal_time'] = df_filtered[
+    'Timestamp middle UTC'
+    ].apply(get_sidereal_time)
 
-        if sidereal_end is None:
-            # If no sidereal end time is provided,
-            # choose one image per night closest
-            # to the sideral start time
+    if sidereal_end is None:
+        # If no sidereal end time is provided, choose one image
+        # per night closest to the sideral start time.
+        # Iterate through dates.
+        for _, night_group in df_filtered.groupby('night_date'):
+            # Sometimes limiting to clear images
+            # results in nothing at all.
+            if len(night_group) == 0:
+                continue
+
+            # Choose all images within the "time_limit"
+            # distance from the reference sidereal time.
             valid_images = night_group[
                 np.minimum(
                     (night_group['sidereal_time'] - sidereal_start) % 24,
@@ -144,32 +150,38 @@ def select_images(start_date,
                 ) < time_limit
             ]
 
+            # Sometimes there are no images near the
+            # reference time after selecting clear images
+            # and requiring a narrow time limit.
             if len(valid_images) == 0:
                 continue
 
+            # Choose the image closest to the reference time.
             closest_image = valid_images.iloc[
             (valid_images['sidereal_time'] - sidereal_start).abs().argsort()[:1]
             ]
 
+            # Update the total size and the selected image list.
             total_size_mb += closest_image['Filesize (bytes)'].values[0] / (1000 * 1000)
             selected_images.append(closest_image['Directory'].values[0])
+    else:
+        # Choose images between sidereal start and
+        # end times. Different logic for whether
+        # the end time is larger or small than
+        # the start time (sidereal time is mod 24)
+        if sidereal_start < sidereal_end:
+            valid_images = night_group[
+                            (night_group['sidereal_time']>=sidereal_start) &
+                            (night_group['sidereal_time']<=sidereal_end)
+                            ]
         else:
-            # Choose images between sidereal start and
-            # end times. Different logic for whether
-            # the end time is larger or small than
-            # the start time (sidereal time is mod 24)
-            if sidereal_start < sidereal_end:
-                valid_images = night_group[
-                                (night_group['sidereal_time']>=sidereal_start) &
-                                (night_group['sidereal_time']<=sidereal_end)
-                                ]
-            else:
-                valid_images = night_group[
-                                (night_group['sidereal_time']>=sidereal_start) |
-                                (night_group['sidereal_time']<=sidereal_end)
-                                ]
-            selected_images += valid_images['Directory']
-            total_size_mb += sum(valid_images['Filesize (bytes)']) / (1000 * 1000)
+            valid_images = night_group[
+                            (night_group['sidereal_time']>=sidereal_start) |
+                            (night_group['sidereal_time']<=sidereal_end)
+                            ]
+        # Update the total size and the selected image list.
+        selected_images += valid_images['Directory']
+        total_size_mb += sum(valid_images['Filesize (bytes)']) / (1000 * 1000)
     return selected_images, total_size_mb
 
 @app.route('/download', methods=['POST'])
