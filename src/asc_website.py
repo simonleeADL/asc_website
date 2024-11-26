@@ -72,9 +72,15 @@ def download_images():
         Last night in the date range.
         Formatted as "%Y-%m-%d"
 
-    sidereal_datetime : str
+    reference_datetime : str
         Date and time from which the
-        reference sidereal time will be calculated.
+        reference sidereal time will be calculated
+        (or the start of the sidereal time range).
+        Formatted as "%Y-%m-%dT%H:%M"
+        
+    reference_datetime_end : str
+        Date and time from which the end of the
+        sidereal time range will be calculated.
         Formatted as "%Y-%m-%dT%H:%M"
 
     limit_clear_images : str
