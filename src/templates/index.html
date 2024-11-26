@@ -123,7 +123,7 @@
         function processImageCounts(data) {
             const imageCounts = {};
             data.forEach(entry => {
-                imageCounts[entry.image_date] = entry.image_count;
+                imageCounts[entry.night_date] = entry.image_count_per_night;
             });
             return imageCounts;
         }
@@ -185,7 +185,7 @@
         }
 
         function updateNavigationButtons(imageData) {
-            const availableDates = imageData.map(entry => entry.image_date);
+            const availableDates = imageData.map(entry => entry.night_date);
             const minDate = availableDates.length ? availableDates[0] : null;
             const maxDate = availableDates.length ? availableDates[availableDates.length - 1] : null;
             

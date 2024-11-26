@@ -1,0 +1,4 @@
+{
+    "db_location": "/location/of/database.csv",
+    "base_dir": "/location/of/image/files/"
+}
