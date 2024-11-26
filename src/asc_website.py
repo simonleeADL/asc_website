@@ -54,10 +54,14 @@ def get_image_counts():
     """
     data = image_counts.to_dict(orient='records')
     return jsonify(data)
-
-@app.route('/download', methods=['POST'])
-def download_images():
-    """ Allows for downloading images based on date range and sidereal time
+    
+def select_images(start_date,
+                end_date,
+                sidereal_start,
+                sidereal_end=None,
+                time_limit=0.5,
+                limit_clear_images=False):
+    """ Selects images based on date range and sidereal time
     
     This function is provided a start and end date.
     Images are chosen between these dates (at midday).
@@ -76,11 +80,107 @@ def download_images():
     will include images taken *all the way up to*
     2020-01-04 12:00 (midday on Jan 3rd).
     
-    A reference time is also provided from which the
-    refernce sidereal time will be calculated.
-    Currently, one image is chosen per "night" that is
-    closest to this sidereal time, so the stars should
-    all be in the same place in the image.
+    If "sidereal_end" is not given, one image is chosen
+    per "night" that is closest to "sidereal_start",
+    so the stars should be in the same place in the image.
+    
+    If "sidereal_end" *is* given, images are chosen
+    within the range of sidereal times.
+    
+    Parameters
+    ----------
+    start_date : str 
+        First night in the date range.
+        Formatted as "%Y-%m-%d"
+        
+    end_date : str 
+        Last night in the date range.
+        Formatted as "%Y-%m-%d"
+        
+    sidereal_start : float 
+        Reference sidereal time
+        (or start of sidereal time range).
+        
+    sidereal_end : float 
+        Sidereal time range end.
+        
+    limit_clear_images : bool
+        Boolean to restrict to images that are
+        more likely to have clear skies
+        (right now just based on filesize).
+        
+    Returns
+    -------
+    selected_images : list of strings
+        List of selected image paths.
+    
+    total_size_mb : float
+        Total size of all the chosen images.
+    """
+    df_filtered = df[(df['night_date'] >= start_date) & (df['night_date'] <= end_date)]
+
+    selected_images = []
+    total_size_mb = 0.0
+
+    # Group images by night
+    for _, night_group in df_filtered.groupby('night_date'):
+        if limit_clear_images:
+            night_group = night_group[
+            night_group['Filesize (bytes)'].between(10500000, 11000000)
+            ]
+        if len(night_group) == 0:
+            continue
+
+        night_group['sidereal_time'] = night_group['Timestamp middle UTC'].apply(get_sidereal_time)
+        
+        if sidereal_end is None:
+            # If no sidereal end time is provided,
+            # choose one image per night closest
+            # to the sideral start time
+            valid_images = night_group[
+                np.minimum(
+                    (night_group['sidereal_time'] - sidereal_start) % 24,
+                    (sidereal_start - night_group['sidereal_time']) % 24
+                ) < time_limit
+            ]
+
+            if len(valid_images) == 0:
+                continue
+
+            closest_image = valid_images.iloc[
+            (valid_images['sidereal_time'] - sidereal_start).abs().argsort()[:1]
+            ]
+
+            total_size_mb += closest_image['Filesize (bytes)'].values[0] / (1000 * 1000)
+            selected_images.append(closest_image['Directory'].values[0])
+        else:
+            # Choose images between sidereal start and
+            # end times. Different logic for whether
+            # the end time is larger or small than
+            # the start time (sidereal time is mod 24)
+            if sidereal_start < sidereal_end:
+                valid_images = night_group[
+                                (night_group['sidereal_time']>=sidereal_start) & 
+                                (night_group['sidereal_time']<=sidereal_end)
+                                ]
+            else:
+                valid_images = night_group[
+                                (night_group['sidereal_time']>=sidereal_start) | 
+                                (night_group['sidereal_time']<=sidereal_end)
+                                ]
+            selected_images += valid_images['Directory']
+            total_size_mb += sum(valid_images['Filesize (bytes)']) / (1000 * 1000)
+    return selected_images, total_size_mb
+
+@app.route('/download', methods=['POST'])
+def download_images():
+    """ Allows for downloading images based on date range and sidereal time
+    
+    This function is provided a start and end date.
+    Images are chosen between these dates (at midday).
+    
+    For now, one image per night is chosen closest to
+    the sidereal time of the reference date and time.
     
     A checkbox can be ticked to that instead of downloading
     the images, just the total filesize is presented.
@@ -124,7 +224,6 @@ def download_images():
     only_calculate = False
     if request.form['only_calculate'] == "true":
         only_calculate = True
-    time_limit = 0.5 # Max number of hours from sidereal time acceptable
 
     # Convert Adelaide time to UTC
     adelaide_time = adelaide_tz.localize(
@@ -135,40 +234,12 @@ def download_images():
     # Get the sidereal time for this specific UTC time
     sidereal_target = get_sidereal_time(
                         adelaide_time.astimezone(pytz.utc))
-
-    # Filter based on date range
-    df_filtered = df[(df['night_date'] >= start_date) & (df['night_date'] <= end_date)]
-
-    selected_images = []
-    total_size_mb = 0.0
-
-    # Group images by night
-    for _, night_group in df_filtered.groupby('night_date'):
-
-        if limit_clear_images:
-            night_group = night_group[
-            night_group['Filesize (bytes)'].between(10500000, 11000000)
-            ]
-        if len(night_group) == 0:
-            continue
-
-        night_group['sidereal_time'] = night_group['Timestamp middle UTC'].apply(get_sidereal_time)
-        valid_images = night_group[
-            np.minimum(
-                (night_group['sidereal_time'] - sidereal_target) % 24,
-                (sidereal_target - night_group['sidereal_time']) % 24
-            ) < time_limit
-        ]
-
-        if len(valid_images) == 0:
-            continue
-
-        closest_image = valid_images.iloc[
-        (valid_images['sidereal_time'] - sidereal_target).abs().argsort()[:1]
-        ]
-
-        total_size_mb += closest_image['Filesize (bytes)'].values[0] / (1000 * 1000)
-        selected_images.append(closest_image['Directory'].values[0])
+                        
+    selected_images, total_size_mb = select_images(
+                                    start_date,
+                                    end_date,
+                                    sidereal_target,
+                                    limit_clear_images=limit_clear_images)
 
     if only_calculate:
         return jsonify({'total_size_mb': total_size_mb})
