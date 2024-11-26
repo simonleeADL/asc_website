@@ -54,7 +54,7 @@ def get_image_counts():
     """
     data = image_counts.to_dict(orient='records')
     return jsonify(data)
-    
+
 def select_images(start_date,
                 end_date,
                 sidereal_start,
@@ -62,58 +62,58 @@ def select_images(start_date,
                 time_limit=0.5,
                 limit_clear_images=False):
     """ Selects images based on date range and sidereal time
-    
+
     This function is provided a start and end date.
     Images are chosen between these dates (at midday).
-    
+
     The all-sky camera puts images in folders
     based on the "night" in which they were captured.
     e.g. a photo taken at 2020-01-02 01:00 (1AM on Jan 2nd)
     will be in the 20200101 folder and considered to be
     part of the 2020-01-01 "night".
-    
+
     Thus, selecting 2020-01-02 as the start date
     will *not* include images taken before
     2020-01-02 12:00 (midday on Jan 2nd).
-    
+
     But selecting 2020-01-03 as the end date
     will include images taken *all the way up to*
     2020-01-04 12:00 (midday on Jan 3rd).
-    
+
     If "sidereal_end" is not given, one image is chosen
     per "night" that is closest to "sidereal_start",
     so the stars should be in the same place in the image.
-    
+
     If "sidereal_end" *is* given, images are chosen
     within the range of sidereal times.
-    
+
     Parameters
     ----------
-    start_date : str 
+    start_date : str
         First night in the date range.
         Formatted as "%Y-%m-%d"
-        
-    end_date : str 
+
+    end_date : str
         Last night in the date range.
         Formatted as "%Y-%m-%d"
-        
-    sidereal_start : float 
+
+    sidereal_start : float
         Reference sidereal time
         (or start of sidereal time range).
-        
-    sidereal_end : float 
+
+    sidereal_end : float
         Sidereal time range end.
-        
+
     limit_clear_images : bool
         Boolean to restrict to images that are
         more likely to have clear skies
         (right now just based on filesize).
-        
+
     Returns
     -------
     selected_images : list of strings
         List of selected image paths.
-    
+
     total_size_mb : float
         Total size of all the chosen images.
     """
@@ -132,7 +132,7 @@ def select_images(start_date,
             continue
 
         night_group['sidereal_time'] = night_group['Timestamp middle UTC'].apply(get_sidereal_time)
-        
+
         if sidereal_end is None:
             # If no sidereal end time is provided,
             # choose one image per night closest
@@ -160,12 +160,12 @@ def select_images(start_date,
             # the start time (sidereal time is mod 24)
             if sidereal_start < sidereal_end:
                 valid_images = night_group[
-                                (night_group['sidereal_time']>=sidereal_start) & 
+                                (night_group['sidereal_time']>=sidereal_start) &
                                 (night_group['sidereal_time']<=sidereal_end)
                                 ]
             else:
                 valid_images = night_group[
-                                (night_group['sidereal_time']>=sidereal_start) | 
+                                (night_group['sidereal_time']>=sidereal_start) |
                                 (night_group['sidereal_time']<=sidereal_end)
                                 ]
             selected_images += valid_images['Directory']
@@ -175,45 +175,45 @@ def select_images(start_date,
 @app.route('/download', methods=['POST'])
 def download_images():
     """ Allows for downloading images based on date range and sidereal time
-    
+
     This function is provided a start and end date.
     Images are chosen between these dates (at midday).
-    
+
     For now, one image per night is chosen closest to
     the sidereal time of the reference date and time.
-    
+
     A checkbox can be ticked to that instead of downloading
     the images, just the total filesize is presented.
-    
+
     Parameters
     ----------
-    start_date : str 
+    start_date : str
         First night in the date range.
         Formatted as "%Y-%m-%d"
-        
-    end_date : str 
+
+    end_date : str
         Last night in the date range.
         Formatted as "%Y-%m-%d"
-        
-    sidereal_datetime : str 
-        Date and time from which the 
+
+    sidereal_datetime : str
+        Date and time from which the
         reference sidereal time will be calculated.
         Formatted as "%Y-%m-%dT%H:%M"
-        
+
     limit_clear_images : str
         Boolean to restrict to images that are
         more likely to have clear skies
         (right now just based on filesize).
-        
+
     only_calculate : bool
         If true, just return the total filesize
         of chosen images.
-        
+
     Returns
     -------
     total_size_mb : float
         Total size of all the chosen images.
-    
+
     zip_buffer : .zip
         Compressed folder including all chosen images
     """
@@ -234,7 +234,7 @@ def download_images():
     # Get the sidereal time for this specific UTC time
     sidereal_target = get_sidereal_time(
                         adelaide_time.astimezone(pytz.utc))
-                        
+
     selected_images, total_size_mb = select_images(
                                     start_date,
                                     end_date,
