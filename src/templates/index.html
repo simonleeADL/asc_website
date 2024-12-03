@@ -70,18 +70,14 @@
         <input type="date" id="start_date" name="start_date" required><br><br>
 
         <label for="end_date">Date range end (Adelaide time):</label>
-        <input type="date" id="end_date" name="end_date" required><br><br>
-        
-        <p>Either:</p>
-        <p>- Select a refernce time. The sidereal time will be calculated. For each night in the date range, the closest image to that sidereal time will be downloaded.</p>
-        <p>- Select a refernce time and a reference time end. The sidereal time range will be calculated. For each night, every image in that sidereal time range will be downloaded. </p>
-        <p></p>
+        <input type="date" id="end_date" name="end_date" required><br><br><br>
         
         <label for="sidereal_datetime">Reference time (Adelaide time):</label>
         <input type="datetime-local" id="sidereal_datetime" name="sidereal_datetime" required><br><br>
         
-        <label for="sidereal_datetime_end">Reference time end (Adelaide time):</label>
+        <label for="sidereal_datetime_end"> Reference time end (Adelaide time) [Optional]:</label>
         <input type="datetime-local" id="sidereal_datetime_end" name="sidereal_datetime_end"><br><br>
+        
         <!-- Checkbox for limiting to clear images -->
         <label>
             <input type="checkbox" id="limit_clear_images" name="limit_clear_images"> Limit to clear images (very rough)
@@ -92,6 +88,31 @@
         <button type="button" id="calculate_size">Calculate Download Size</button><br><br>
         <button type="submit" id="download_images">Download Images</button>
     </form>
+    
+    <hr>
+    
+    <form id="sidereal-plot" method="post" action="/sidereal_plot" onsubmit="fetchSiderealPlot(event)">
+        <h2>Plot altitude over time</h2>
+        
+        <label for="source_name">Source name:</label>
+        <input type="text" id="source_name" name="source_name" list="source_names" required>
+        <br><br>
+	      <label for="source_name">Source position (ra,dec):</label>
+	      <input type="text" id="source_pos" name="source_pos"><br><br>
+        
+        <datalist id="source_names">
+        </datalist>
+
+        <button type="submit" id="show_sidereal_plot">Show sidereal plot</button><br><br>
+        
+        <label for="date_night">Date of a night:</label>
+        <input type="date" id="date_night" name="date_night"><br><br>
+        <button type="button" id="show_night_plot">Show night plot</button>
+    </form>
+    <div id="plot-container" style="margin-top: 20px;">
+        <!-- Plot will be displayed here -->
+    </div>
+    
     <hr>
     <!-- Calendar displaying image counts per day -->
     <h2>Download by date</h2>
@@ -101,6 +122,57 @@
         <button id="next-month" disabled>Next Month</button>
     </div>
     <div id="calendar-container"></div>
+
+    <script>
+        async function populateSourceNames() {
+            try {
+                const response = await fetch('/get_star_catalogue');
+                if (response.ok) {
+                    const names = await response.json();
+                    const dataList = document.getElementById("source_names");
+                    dataList.innerHTML = ""; // Clear existing options
+                    names.forEach(name => {
+                        const option = document.createElement("option");
+                        option.value = name;
+                        dataList.appendChild(option);
+                    });
+                } else {
+                    console.error("Failed to fetch star catalogue:", response.statusText);
+                }
+            } catch (error) {
+                console.error("Error while fetching star catalogue:", error);
+            }
+        }
+
+        // Call populateSourceNames when the page loads
+        window.onload = populateSourceNames;
+    </script>
+
+    <script>
+        async function fetchSiderealPlot(event) {
+            event.preventDefault(); // Prevent the form from submitting the traditional way
+            const form = document.getElementById("sidereal-plot");
+            const formData = new FormData(form);
+            const sourceName = formData.get("source_name");
+
+            try {
+                const response = await fetch(form.action, {
+                    method: form.method,
+                    body: formData,
+                });
+                if (response.ok) {
+                    const plotHtml = await response.text();
+                    document.getElementById("plot-container").innerHTML = plotHtml;
+                } else {
+                    console.error("Error:", response.statusText);
+                    document.getElementById("plot-container").innerHTML = "Failed to load the plot.";
+                }
+            } catch (error) {
+                console.error("Fetch error:", error);
+                document.getElementById("plot-container").innerHTML = "An error occurred.";
+            }
+        }
+    </script>
 
     <script>
         let currentMonth = new Date().getMonth();  // Get the current month (0-indexed)
@@ -287,6 +359,46 @@
         // Initial call to set button states
         toggleButtons();
     });
+    </script>
+    <script>
+        async function fetchNightPlot() {
+            console.log("fetchNightPlot called")
+            const sourceName = document.getElementById("source_name").value;
+            const sourcePos = document.getElementById("source_pos").value;
+            const dateNight = document.getElementById("date_night").value;
+
+            // Validate input
+            if (!sourceName || !dateNight) {
+                alert("Please select a source name and a night date.");
+                return;
+            }
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append("source_name", sourceName);
+            formData.append("source_pos", sourcePos);
+            formData.append("date_night", dateNight);
+
+            try {
+                const response = await fetch("/night_plot", {
+                    method: "POST",
+                    body: formData,
+                });
+                if (response.ok) {
+                    const plotHtml = await response.text();
+                    document.getElementById("plot-container").innerHTML = plotHtml;
+                } else {
+                    console.error("Error:", response.statusText);
+                    document.getElementById("plot-container").innerHTML = "Failed to load the night plot.";
+                }
+            } catch (error) {
+                console.error("Fetch error:", error);
+                document.getElementById("plot-container").innerHTML = "An error occurred.";
+            }
+        }
+
+        // Attach event listener to the "Show night plot" button
+        document.getElementById("show_night_plot").addEventListener("click", fetchNightPlot);
     </script>
 </body>
 </html>

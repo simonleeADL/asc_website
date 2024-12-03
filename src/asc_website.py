@@ -13,45 +13,108 @@ import pandas as pd
 import pytz
 
 from flask import Flask, request, send_file, render_template, jsonify
-from tools import get_sidereal_time,select_images
+from tools import get_sidereal_time, select_images
+from astropy_tools import (
+    source_from_name,
+    source_from_coord,
+    plot_over_sidereal,
+    plot_over_night,
+    sidereal_times_alts,
+    get_bright_star_catalogue,
+)
 
 pd.options.mode.copy_on_write = True
 
 app = Flask(__name__)
 
 # Load the CSV database
-CONFIG_NAME = 'config_local.json'
+CONFIG_NAME = "config_local.json"
 CONFIG_DIR = "../config/" + CONFIG_NAME
 CONFIG_PATH = (Path(__file__).parent / CONFIG_DIR).resolve()
-with open(CONFIG_PATH, 'r', encoding="utf-8") as f:
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = json.load(f)
-db_location = config['db_location']
-base_dir = config['base_dir']
-df = pd.read_csv(db_location, parse_dates=['Timestamp middle','Timestamp middle UTC'])
+db_location = config["db_location"]
+base_dir = config["base_dir"]
+df = pd.read_csv(db_location, parse_dates=["Timestamp middle", "Timestamp middle UTC"])
 
 # Add column of the date of the night of capture
-df['night_date'] = df['Directory'].str[:8]
-image_counts = df.groupby(df['night_date']).size().reset_index(name='image_count_per_night')
-df['night_date'] = pd.to_datetime(df['night_date'])
+df["night_date"] = df["Directory"].str[:8]
+image_counts = (
+    df.groupby(df["night_date"]).size().reset_index(name="image_count_per_night")
+)
+df["night_date"] = pd.to_datetime(df["night_date"])
 
-adelaide_tz = pytz.timezone('Australia/Adelaide')
+adelaide_tz = pytz.timezone("Australia/Adelaide")
 
-@app.route('/')
+
+@app.route("/")
 def index():
-    """ Provides HTML file for the website
-    """
-    return render_template('index.html')
+    """Provides HTML file for the website"""
+    return render_template("index.html")
 
-@app.route('/get_image_counts')
+
+@app.route("/get_image_counts")
 def get_image_counts():
-    """ Provides counts of the number of images per night
-    """
-    data = image_counts.to_dict(orient='records')
+    """Provides counts of the number of images per night"""
+    data = image_counts.to_dict(orient="records")
     return jsonify(data)
 
-@app.route('/download', methods=['POST'])
+
+def get_source(source_name, source_pos):
+    "Get an astropy SkyCoord based on name or coordinates"
+    if len(source_pos) > 0:
+        try:
+            ra, dec = source_pos.split(",", 1)
+            ra = float(ra)
+            dec = float(dec)
+        except ValueError:
+            return None
+        source = source_from_coord(ra, dec)
+    else:
+        source = source_from_name(source_name)
+    return source
+
+
+@app.route("/sidereal_plot", methods=["POST"])
+def plot_source_sidereal():
+    """Plot the altitude of a source over sidereal time"""
+    source_name = request.form["source_name"]
+    source_pos = request.form["source_pos"]
+
+    source = get_source(source_name, source_pos)
+
+    if source is not None:
+        sidereal_times, altitudes = sidereal_times_alts(source)
+        sidereal_plot = plot_over_sidereal(sidereal_times, altitudes, name=source_name)
+        return sidereal_plot
+    return None
+
+
+@app.route("/night_plot", methods=["POST"])
+def plot_source_night():
+    """Plot the altitude of a source over a given night"""
+    source_name = request.form["source_name"]
+    source_pos = request.form["source_pos"]
+    date_night = request.form["date_night"]
+
+    source = get_source(source_name, source_pos)
+
+    if source is not None:
+        night_plot = plot_over_night(source, date_night, name=source_name)
+        return night_plot
+    return None
+
+
+@app.route("/get_star_catalogue", methods=["GET"])
+def get_star_catalogue():
+    """Gets the catalogue of bright stars visible in Adelaide"""
+    catalogue = get_bright_star_catalogue(n=20)
+    return jsonify(catalogue["Name"].tolist())
+
+
+@app.route("/download", methods=["POST"])
 def download_images():
-    """ Allows for downloading images based on date range and sidereal time
+    """Allows for downloading images based on date range and sidereal time
 
     This function is provided a start and end date.
     Images are chosen between these dates (at midday).
@@ -77,7 +140,7 @@ def download_images():
         reference sidereal time will be calculated
         (or the start of the sidereal time range).
         Formatted as "%Y-%m-%dT%H:%M"
-        
+
     reference_datetime_end : str
         Date and time from which the end of the
         sidereal time range will be calculated.
@@ -100,77 +163,83 @@ def download_images():
     zip_buffer : .zip
         Compressed folder including all chosen images
     """
-    start_date = request.form['start_date']
-    end_date = request.form['end_date']
-    reference_datetime = request.form['sidereal_datetime']
-    reference_datetime_end = request.form['sidereal_datetime_end']
-    limit_clear_images = request.form.get('limit_clear_images') == 'on'  # Checkbox value
+    start_date = request.form["start_date"]
+    end_date = request.form["end_date"]
+    reference_datetime = request.form["sidereal_datetime"]
+    reference_datetime_end = request.form["sidereal_datetime_end"]
+    limit_clear_images = (
+        request.form.get("limit_clear_images") == "on"
+    )  # Checkbox value
     only_calculate = False
-    if request.form['only_calculate'] == "true":
+    if request.form["only_calculate"] == "true":
         only_calculate = True
 
     # Get sidereal time from reference time
     reference_datetime_utc = adelaide_tz.localize(
-                    datetime.strptime(
-                    reference_datetime, "%Y-%m-%dT%H:%M")
-                    )
-    sidereal_start = get_sidereal_time(
-                        reference_datetime_utc.astimezone(pytz.utc))
+        datetime.strptime(reference_datetime, "%Y-%m-%dT%H:%M")
+    )
+    sidereal_start = get_sidereal_time(reference_datetime_utc.astimezone(pytz.utc))
     if reference_datetime_end:
         reference_datetime_end_utc = adelaide_tz.localize(
-                        datetime.strptime(
-                        reference_datetime_end, "%Y-%m-%dT%H:%M")
-                        )
+            datetime.strptime(reference_datetime_end, "%Y-%m-%dT%H:%M")
+        )
         sidereal_end = get_sidereal_time(
-                            reference_datetime_end_utc.astimezone(pytz.utc))
+            reference_datetime_end_utc.astimezone(pytz.utc)
+        )
     else:
         sidereal_end = None
 
     selected_images, total_size_mb = select_images(
-                                    df,
-                                    start_date,
-                                    end_date,
-                                    sidereal_start,
-                                    sidereal_end = sidereal_end,
-                                    limit_clear_images=limit_clear_images)
+        df,
+        start_date,
+        end_date,
+        sidereal_start,
+        sidereal_end=sidereal_end,
+        limit_clear_images=limit_clear_images,
+    )
 
     if only_calculate:
-        return jsonify({'total_size_mb': total_size_mb})
+        return jsonify({"total_size_mb": total_size_mb})
     # Zip the selected images (same as before)
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w') as zf:
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
         for directory in selected_images:
             file_path = base_dir + directory
             zf.write(file_path, os.path.basename(file_path))
 
     zip_buffer.seek(0)
 
-    return send_file(zip_buffer,
-                    mimetype='application/zip',
-                    as_attachment=True,
-                    download_name='images.zip')
+    return send_file(
+        zip_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="images.zip",
+    )
 
-@app.route('/download_by_date')
+
+@app.route("/download_by_date")
 def download_by_date():
-    """Downloads all images from one night
-    """
-    date = request.args.get('date')  # YYYYMMDD
+    """Downloads all images from one night"""
+    date = request.args.get("date")  # YYYYMMDD
     # Find all directories starting with the date
-    matching_files = df[df['Directory'].str[:8]==date]
+    matching_files = df[df["Directory"].str[:8] == date]
 
     # Create a ZIP file with those images
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w') as zf:
-        for file_path in matching_files['Directory'].values:
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
+        for file_path in matching_files["Directory"].values:
             file_path = base_dir + file_path
             print(file_path)
             zf.write(file_path, os.path.basename(file_path))
 
     zip_buffer.seek(0)
-    return send_file(zip_buffer,
-                    as_attachment=True,
-                    download_name=f'{date}_images.zip',
-                    mimetype='application/zip')
+    return send_file(
+        zip_buffer,
+        as_attachment=True,
+        download_name=f"{date}_images.zip",
+        mimetype="application/zip",
+    )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     app.run(debug=True)
